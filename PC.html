@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Argentina GeoNav - Visor de Mapas y Fotos</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Estilos generales para la aplicación de escritorio */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Evita barras de desplazamiento en el cuerpo principal */
+        }
+        
+        /* Contenedor principal para la vista de PC (Barra lateral + Mapa) */
+        .desktop-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Área de Mapa */
+        .map-area {
+            flex-grow: 1;
+            position: relative;
+            background: linear-gradient(to bottom, #7dd3fc 0%, #38bdf8 30%, #0369a1 100%); /* Fondo azul (océano/cielo) */
+            cursor: grab; /* Cursor inicial para arrastrar */
+        }
+        
+        /* Simulador del Terreno de Argentina */
+        .map-visualization {
+            position: absolute;
+            top: 15%; /* Dejar espacio para el Search Bar */
+            bottom: 5%;
+            left: 20%;
+            right: 20%;
+            background-color: #34d399; /* Verde para la tierra */
+            border-radius: 15px;
+            box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.5s ease; /* Transición para el zoom, no para el arrastre */
+        }
+        
+        /* Marcadores de Ciudades */
+        .map-marker {
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            z-index: 5;
+            transition: transform 0.2s;
+        }
+
+        .map-marker:hover {
+            transform: scale(1.5);
+        }
+
+        .city-name {
+            position: absolute;
+            font-size: 12px;
+            color: #1f2937; /* Gris oscuro */
+            font-weight: bold;
+            text-shadow: 1px 1px 0 #fff;
+            padding-left: 25px;
+            white-space: nowrap;
+        }
+        
+        /* Marcador de Mi Ubicación (Puntito azul) */
+        #my-location-marker {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: #3b82f6; /* Azul brillante */
+            border-radius: 50%;
+            border: 3px solid #fff;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5); /* Halo de pulso */
+            z-index: 10;
+            /* Posición inicial (cerca de Buenos Aires) */
+            top: 70%; 
+            left: 65%;
+        }
+
+        /* Simulador de Ruta (Flechas/Línea discontinua) */
+        #route-path-sim {
+            position: absolute;
+            /* Ruta activa: naranja brillante */
+            background: repeating-linear-gradient(-45deg, #f59e0b, #f59e0b 5px, transparent 5px, transparent 10px); 
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            z-index: 4; /* Debajo de los marcadores */
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.8);
+            border-radius: 5px;
+        }
+
+        /* Posiciones simuladas de las ciudades en el mapa (ajustadas para el tamaño de PC) */
+        #marker-bsas { top: 75%; left: 75%; }
+        #marker-cordoba { top: 58%; left: 55%; }
+        #marker-mendoza { top: 65%; left: 30%; }
+        #marker-ushuaia { top: 98%; left: 45%; }
+        #marker-salta { top: 15%; left: 45%; }
+        #marker-bariloche { top: 85%; left: 35%; }
+        #marker-mardelplata { top: 80%; left: 80%; }
+        #marker-tucuman { top: 25%; left: 50%; }
+        
+        /* Ciudades de Córdoba Adicionales */
+        #marker-totoral { top: 45%; left: 50%; }
+        #marker-lapuerta { top: 50%; left: 65%; }
+        #marker-lapara { top: 55%; left: 70%; }
+
+        /* Ciudades de Buenos Aires Adicionales */
+        #marker-ranelagh { top: 74%; left: 77%; }
+        #marker-villaespana { top: 74.5%; left: 78%; }
+        #marker-varela { top: 75.5%; left: 76%; }
+        
+        /* Rosario y Neuquén */
+        #marker-rosario { top: 70%; left: 70%; } 
+        #marker-neuquen { top: 78%; left: 45%; } 
+
+        /* NUEVAS PROVINCIAS */
+        #marker-resistencia { top: 20%; left: 65%; } /* Chaco */
+        #marker-rawson { top: 80%; left: 65%; } /* Chubut */
+        #marker-corrientes { top: 30%; left: 70%; } /* Corrientes */
+        #marker-parana { top: 55%; left: 70%; } /* Entre Ríos */
+        #marker-formosa { top: 15%; left: 55%; } /* Formosa */
+        
+        /* Estilo del Modal (para PC, más grande y centrado) */
+        #app-modal {
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+        
+        /* Estilos para el contenedor de la imagen de la ciudad */
+        #city-image-container {
+            width: 100%;
+            height: 200px; /* Altura fija para el contenedor */
+            background-color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        #city-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Asegura que la imagen cubra el contenedor */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- Contenedor Principal de la Aplicación de Escritorio -->
+    <div class="desktop-container">
+
+        <!-- BARRA LATERAL (Simula la barra de búsqueda y resultados de Google Maps) -->
+        <div id="sidebar-view" class="w-1/4 min-w-[300px] bg-white p-6 shadow-2xl flex flex-col z-20">
+            <h1 class="text-2xl font-bold text-blue-700 mb-6 flex items-center">
+                <i data-lucide="map" class="w-6 h-6 mr-2"></i> Argentina GeoNav
+            </h1>
+            
+            <!-- Campo de Búsqueda -->
+            <div class="relative mb-6">
+                <input type="text" placeholder="Buscar en Argentina..." 
+                       class="w-full py-3 pl-10 pr-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150" 
+                       onfocus="simulateSearch()"
+                       id="search-input">
+                <i data-lucide="search" class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2"></i>
+            </div>
+            
+            <!-- Resultados de Búsqueda Simulados / Detalles del Lugar (Contenido dinámico) -->
+            <!-- Se utiliza 'flex-grow', 'h-0' y 'overflow-y-auto' para asegurar el desplazamiento de la ruedita -->
+            <div id="sidebar-content" class="flex-grow overflow-y-auto h-0 pb-4"> 
+                <div id="loading-spinner" class="text-center p-8">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-3"></div>
+                    <p class="text-gray-500">Cargando favoritos...</p>
+                </div>
+            </div>
+            
+            <!-- Lista de Favoritos (Contenido estático/persistente) -->
+            <div class="mt-8 pt-4 border-t border-gray-200">
+                <h2 class="text-lg font-semibold mb-3 text-gray-700 flex items-center">
+                    <i data-lucide="star" class="w-5 h-5 mr-2 text-yellow-500 fill-yellow-500"></i>
+                    Mis Favoritos
+                </h2>
+                <div id="favorites-list" class="space-y-2">
+                    <p class="text-sm text-gray-400 italic mt-2">Cargando...</p>
+                </div>
+            </div>
+
+            <!-- Botón de Home/Reset agregado para volver a la vista inicial -->
+            <button onclick="resetSidebar()" class="mt-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-semibold">
+                <i data-lucide="home" class="w-5 h-5 inline mr-1"></i> Ver Todas las Ciudades
+            </button>
+            <button onclick="zoomOut()" class="mt-2 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                <i data-lucide="zoom-out" class="w-5 h-5 inline mr-1"></i> Alejar Mapa
+            </button>
+            
+            <p class="text-xs text-center text-gray-300 mt-2" id="user-id-display">...</p>
+        </div>
+        
+        <!-- ÁREA DEL MAPA -->
+        <div class="map-area" id="map-area">
+            
+            <!-- Contenedor para Iniciar Sesión/Perfil (Arriba a la derecha) -->
+            <div id="login-area" class="absolute top-4 right-4 z-50">
+                <!-- Contenido generado por JS -->
+            </div>
+
+            <!-- Simulador del Terreno de Argentina -->
+            <div class="map-visualization" id="map-visualization">
+                <div class="absolute inset-0 flex items-center justify-center text-4xl font-extrabold text-white/50 pointer-events-none">
+                    ARGENTINA
+                </div>
+                
+                <!-- Marcador de Mi Ubicación -->
+                <div id="my-location-marker"></div>
+                
+                <!-- Simulador de Ruta -->
+                <div id="route-path-sim"></div>
+                
+                <!-- Marcador: Buenos Aires (Capital) -->
+                <div id="marker-bsas" class="map-marker" data-location="Buenos Aires" onclick="simulateMarkerClick('Buenos Aires')">
+                    <i data-lucide="map-pin" class="w-full h-full text-red-600 fill-red-600 drop-shadow-lg"></i>
+                    <span class="city-name text-sm">Buenos Aires</span>
+                </div>
+
+                <!-- Marcadores de Buenos Aires Adicionales -->
+                <div id="marker-ranelagh" class="map-marker" data-location="Ranelagh" onclick="simulateMarkerClick('Ranelagh')">
+                    <i data-lucide="map-pin" class="w-full h-full text-red-400 fill-red-400 drop-shadow-lg"></i>
+                    <span class="city-name">Ranelagh</span>
+                </div>
+                <div id="marker-villaespana" class="map-marker" data-location="Villa España" onclick="simulateMarkerClick('Villa España')">
+                    <i data-lucide="map-pin" class="w-full h-full text-red-400 fill-red-400 drop-shadow-lg"></i>
+                    <span class="city-name">Villa España</span>
+                </div>
+                <div id="marker-varela" class="map-marker" data-location="Florencio Varela" onclick="simulateMarkerClick('Florencio Varela')">
+                    <i data-lucide="map-pin" class="w-full h-full text-red-400 fill-red-400 drop-shadow-lg"></i>
+                    <span class="city-name">F. Varela</span>
+                </div>
+                
+                <!-- Marcador: Córdoba -->
+                <div id="marker-cordoba" class="map-marker" data-location="Córdoba" onclick="simulateMarkerClick('Córdoba')">
+                    <i data-lucide="map-pin" class="w-full h-full text-yellow-500 fill-yellow-500 drop-shadow-lg"></i>
+                    <span class="city-name">Córdoba</span>
+                </div>
+                
+                <!-- Marcadores de Córdoba Adicionales -->
+                <div id="marker-totoral" class="map-marker" data-location="Villa del Totoral" onclick="simulateMarkerClick('Villa del Totoral')">
+                    <i data-lucide="map-pin" class="w-full h-full text-indigo-500 fill-indigo-500 drop-shadow-lg"></i>
+                    <span class="city-name">V. del Totoral</span>
+                </div>
+                <div id="marker-lapuerta" class="map-marker" data-location="La Puerta" onclick="simulateMarkerClick('La Puerta')">
+                    <i data-lucide="map-pin" class="w-full h-full text-indigo-500 fill-indigo-500 drop-shadow-lg"></i>
+                    <span class="city-name">La Puerta</span>
+                </div>
+                <div id="marker-lapara" class="map-marker" data-location="La Para" onclick="simulateMarkerClick('La Para')">
+                    <i data-lucide="map-pin" class="w-full h-full text-indigo-500 fill-indigo-500 drop-shadow-lg"></i>
+                    <span class="city-name">La Para</span>
+                </div>
+                
+                <!-- Marcador: Mendoza -->
+                <div id="marker-mendoza" class="map-marker" data-location="Mendoza" onclick="simulateMarkerClick('Mendoza')">
+                    <i data-lucide="map-pin" class="w-full h-full text-purple-600 fill-purple-600 drop-shadow-lg"></i>
+                    <span class="city-name">Mendoza</span>
+                </div>
+                
+                <!-- Marcador: Rosario -->
+                <div id="marker-rosario" class="map-marker" data-location="Rosario" onclick="simulateMarkerClick('Rosario')">
+                    <i data-lucide="map-pin" class="w-full h-full text-pink-500 fill-pink-500 drop-shadow-lg"></i>
+                    <span class="city-name">Rosario</span>
+                </div>
+                
+                <!-- Marcador: Neuquén -->
+                <div id="marker-neuquen" class="map-marker" data-location="Neuquén" onclick="simulateMarkerClick('Neuquén')">
+                    <i data-lucide="map-pin" class="w-full h-full text-cyan-500 fill-cyan-500 drop-shadow-lg"></i>
+                    <span class="city-name">Neuquén</span>
+                </div>
+
+                <!-- Marcador: Ushuaia -->
+                <div id="marker-ushuaia" class="map-marker" data-location="Ushuaia" onclick="simulateMarkerClick('Ushuaia')">
+                    <i data-lucide="map-pin" class="w-full h-full text-blue-600 fill-blue-600 drop-shadow-lg"></i>
+                    <span class="city-name">Ushuaia</span>
+                </div>
+                
+                <!-- Marcador: Salta -->
+                <div id="marker-salta" class="map-marker" data-location="Salta" onclick="simulateMarkerClick('Salta')">
+                    <i data-lucide="map-pin" class="w-full h-full text-orange-500 fill-orange-500 drop-shadow-lg"></i>
+                    <span class="city-name">Salta</span>
+                </div>
+
+                <!-- Marcador: Bariloche (Nuevo) -->
+                <div id="marker-bariloche" class="map-marker" data-location="Bariloche" onclick="simulateMarkerClick('Bariloche')">
+                    <i data-lucide="map-pin" class="w-full h-full text-pink-600 fill-pink-600 drop-shadow-lg"></i>
+                    <span class="city-name">Bariloche</span>
+                </div>
+
+                <!-- Marcador: Mar del Plata (Nuevo) -->
+                <div id="marker-mardelplata" class="map-marker" data-location="Mar del Plata" onclick="simulateMarkerClick('Mar del Plata')">
+                    <i data-lucide="map-pin" class="w-full h-full text-teal-600 fill-teal-600 drop-shadow-lg"></i>
+                    <span class="city-name">Mar del Plata</span>
+                </div>
+
+                <!-- Marcador: Tucumán (Nuevo) -->
+                <div id="marker-tucuman" class="map-marker" data-location="San Miguel de Tucumán" onclick="simulateMarkerClick('San Miguel de Tucumán')">
+                    <i data-lucide="map-pin" class="w-full h-full text-lime-600 fill-lime-600 drop-shadow-lg"></i>
+                    <span class="city-name">Tucumán</span>
+                </div>
+                
+                <!-- Marcadores de las NUEVAS PROVINCIAS -->
+                <!-- Resistencia (Chaco) -->
+                <div id="marker-resistencia" class="map-marker" data-location="Resistencia" onclick="simulateMarkerClick('Resistencia')">
+                    <i data-lucide="map-pin" class="w-full h-full text-fuchsia-500 fill-fuchsia-500 drop-shadow-lg"></i>
+                    <span class="city-name">Resistencia</span>
+                </div>
+                <!-- Rawson (Chubut) -->
+                <div id="marker-rawson" class="map-marker" data-location="Rawson" onclick="simulateMarkerClick('Rawson')">
+                    <i data-lucide="map-pin" class="w-full h-full text-lime-700 fill-lime-700 drop-shadow-lg"></i>
+                    <span class="city-name">Rawson</span>
+                </div>
+                <!-- Corrientes (Corrientes) -->
+                <div id="marker-corrientes" class="map-marker" data-location="Corrientes" onclick="simulateMarkerClick('Corrientes')">
+                    <i data-lucide="map-pin" class="w-full h-full text-indigo-400 fill-indigo-400 drop-shadow-lg"></i>
+                    <span class="city-name">Corrientes</span>
+                </div>
+                <!-- Paraná (Entre Ríos) -->
+                <div id="marker-parana" class="map-marker" data-location="Paraná" onclick="simulateMarkerClick('Paraná')">
+                    <i data-lucide="map-pin" class="w-full h-full text-amber-500 fill-amber-500 drop-shadow-lg"></i>
+                    <span class="city-name">Paraná</span>
+                </div>
+                <!-- Formosa (Formosa) -->
+                <div id="marker-formosa" class="map-marker" data-location="Formosa" onclick="simulateMarkerClick('Formosa')">
+                    <i data-lucide="map-pin" class="w-full h-full text-emerald-500 fill-emerald-500 drop-shadow-lg"></i>
+                    <span class="city-name">Formosa</span>
+                </div>
+
+            </div>
+            
+            <!-- Controles de Zoom/Ubicación Flotantes -->
+            <div class="absolute bottom-10 right-10 flex flex-col space-y-2">
+                <button onclick="zoomIn()" class="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition">
+                    <i data-lucide="zoom-in" class="w-6 h-6 text-gray-600"></i>
+                </button>
+                <button onclick="focusOnMyLocation()" class="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition">
+                    <i data-lucide="locate" class="w-6 h-6 text-blue-600"></i>
+                </button>
+            </div>
+            
+            <div class="absolute bottom-3 left-1/2 transform -translate-x-1/2 text-xs text-white/70">
+                Datos del Mapa © GeoNav Argentina
+            </div>
+
+        </div>
+
+
+    </div>
+
+    <!-- Notificación de Acción (Modal, reutilizado para simular interacciones) -->
+    <div id="app-modal" class="hidden fixed inset-0 flex items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-white p-8 rounded-xl shadow-2xl text-center w-full max-w-md">
+            <h3 class="text-2xl font-bold mb-3 text-gray-800" id="modal-title">Acción Simulada</h3>
+            <div class="text-gray-600 mb-4" id="modal-app-name">...</div>
+            <button onclick="closeModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+                Cerrar
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Importaciones de Firebase (MANDATORIO)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, getDoc, setDoc, setLogLevel, 
+            collection, query, addDoc, onSnapshot, serverTimestamp, where 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Inicializa los iconos de Lucide
+        lucide.createIcons();
+
+        // --- Variables Globales y de Firebase ---
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+        let currentUserName = null; // Nombre de usuario simulado (Google)
+        
+        // Carga de variables del entorno (MANDATORIO)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Estado del simulador
+        let favorites = []; // Array que será persistente
+        let currentRoutePreferences = {}; // Almacena las respuestas de las preguntas de ruta (opcionalmente persistente)
+
+        // Elementos UI
+        const appModal = document.getElementById('app-modal');
+        const mapArea = document.getElementById('map-area');
+        const mapVisualization = document.getElementById('map-visualization');
+        const sidebarContent = document.getElementById('sidebar-content');
+        const routePathSim = document.getElementById('route-path-sim');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // Estado del zoom y pan (arrastre)
+        let currentZoomLevel = 1.0;
+        let currentTranslateX = 0;
+        let currentTranslateY = 0;
+        let isDragging = false;
+        let startX, startY;
+
+        let lastSelectedDestination = null;
+
+        // Coordenadas simuladas para el cálculo de la ruta (valores en %)
+        const locations = {
+            'Buenos Aires': { top: 75, left: 75, markerId: 'marker-bsas', zoom: 1.0 },
+            'Córdoba': { top: 58, left: 55, markerId: 'marker-cordoba', zoom: 1.0 },
+            'Mendoza': { top: 65, left: 30, markerId: 'marker-mendoza', zoom: 1.0 },
+            'Ushuaia': { top: 98, left: 45, markerId: 'marker-ushuaia', zoom: 1.0 },
+            'Salta': { top: 15, left: 45, markerId: 'marker-salta', zoom: 1.0 },
+            'Bariloche': { top: 85, left: 35, markerId: 'marker-bariloche', zoom: 1.0 },
+            'Mar del Plata': { top: 80, left: 80, markerId: 'marker-mardelplata', zoom: 1.0 },
+            'San Miguel de Tucumán': { top: 25, left: 50, markerId: 'marker-tucuman', zoom: 1.0 },
+            
+            // CIUDADES DE CÓRDOBA (Zoom regional)
+            'Villa del Totoral': { top: 45, left: 50, markerId: 'marker-totoral', zoom: 1.5 },
+            'La Puerta': { top: 50, left: 65, markerId: 'marker-lapuerta', zoom: 1.5 },
+            'La Para': { top: 55, left: 70, markerId: 'marker-lapara', zoom: 1.5 },
+            
+            // CIUDADES de BUENOS AIRES (Zoom GBA)
+            'Ranelagh': { top: 74, left: 77, markerId: 'marker-ranelagh', zoom: 2.0, focusX: -200, focusY: 50 },
+            'Villa España': { top: 74.5, left: 78, markerId: 'marker-villaespana', zoom: 2.0, focusX: -200, focusY: 50 },
+            'Florencio Varela': { top: 75.5, left: 76, markerId: 'marker-varela', zoom: 2.0, focusX: -200, focusY: 50 },
+            
+            // ROSARIO Y NEUQUÉN
+            'Rosario': { top: 70, left: 70, markerId: 'marker-rosario', zoom: 1.0 },
+            'Neuquén': { top: 78, left: 45, markerId: 'marker-neuquen', zoom: 1.0 },
+            
+            // NUEVAS CAPITALES DE PROVINCIA
+            'Resistencia': { top: 20, left: 65, markerId: 'marker-resistencia', zoom: 1.0 },
+            'Rawson': { top: 80, left: 65, markerId: 'marker-rawson', zoom: 1.0 },
+            'Corrientes': { top: 30, left: 70, markerId: 'marker-corrientes', zoom: 1.0 },
+            'Paraná': { top: 55, left: 70, markerId: 'marker-parana', zoom: 1.0 },
+            'Formosa': { top: 15, left: 55, markerId: 'marker-formosa', zoom: 1.0 },
+
+
+            'Mi Ubicación': { top: 70, left: 65 } 
+        };
+
+        // **********************************************
+        // Lógica de Imagen (Generación de Ciudad)
+        // **********************************************
+        
+        const apiKey = ""; 
+        const imagenApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+
+        /**
+         * Genera una imagen de la ciudad usando la API de Gemini/Imagen.
+         * @param {string} locationName - Nombre de la ciudad.
+         */
+        async function fetchCityImageAndDetails(locationName) {
+            const imageContainer = document.getElementById('city-image-container');
+            if (!imageContainer) return;
+            
+            // 1. Mostrar estado de carga
+            imageContainer.innerHTML = `
+                <div class="text-center p-4">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                    <p class="text-xs text-gray-500">Generando vista de calle de ${locationName}...</p>
+                </div>
+            `;
+            
+            // 2. Definir el prompt para Imagen/Gemini
+            const prompt = `Una fotografía realista y vibrante, con estilo de vista de calle, de un lugar emblemático de ${locationName}, Argentina. Alta resolución, día soleado, reflejando la arquitectura o paisaje local.`;
+            
+            try {
+                const payload = { 
+                    instances: [{ prompt: prompt }], 
+                    parameters: { "sampleCount": 1, "aspectRatio": "16:9" } 
+                };
+
+                // Lógica de Reintento con Retroceso Exponencial
+                const MAX_RETRIES = 3;
+                let lastError = null;
+                let response = null;
+
+                for (let i = 0; i < MAX_RETRIES; i++) {
+                    try {
+                        response = await fetch(imagenApiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) {
+                            break; // Éxito
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        lastError = error;
+                        if (i < MAX_RETRIES - 1) {
+                            const delay = Math.pow(2, i) * 1000;
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        }
+                    }
+                }
+                
+                if (!response || !response.ok) {
+                    throw lastError || new Error("Fallo la llamada a la API después de varios reintentos.");
+                }
+
+                const result = await response.json();
+                
+                if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+                    const base64Data = result.predictions[0].bytesBase64Encoded;
+                    const imageUrl = `data:image/png;base64,${base64Data}`;
+                    
+                    // 3. Reemplazar placeholder con la imagen
+                    imageContainer.innerHTML = `<img id="city-image" src="${imageUrl}" alt="Vista de calle de ${locationName}" class="rounded-lg shadow-md transition-all duration-500 hover:scale-[1.03]"/>`;
+                } else {
+                    throw new Error("Respuesta de API de Imagen incompleta.");
+                }
+            } catch (error) {
+                console.error("Error al generar la imagen:", error);
+                imageContainer.innerHTML = `
+                    <div class="text-center p-4 text-red-600">
+                        <i data-lucide="image-off" class="w-6 h-6 mx-auto mb-1"></i>
+                        <p class="text-xs">No se pudo cargar la foto de ${locationName}.</p>
+                    </div>
+                `;
+                 lucide.createIcons();
+            }
+        }
+
+
+        // **********************************************
+        // Lógica de Firebase y Persistencia de Datos
+        // **********************************************
+
+        // Obtiene la referencia al documento privado de configuración del usuario
+        function getPrivateDocRef() {
+            if (!db || !userId) return null;
+            // Ruta: /artifacts/{appId}/users/{userId}/user_data/settings
+            return doc(db, 'artifacts', appId, 'users', userId, 'user_data', 'settings');
+        }
+
+        // Referencia a la colección de comentarios pública
+        function getCommentsCollectionRef() {
+            // Ruta: /artifacts/{appId}/public/data/location_comments
+            return collection(db, 'artifacts', appId, 'public', 'data', 'location_comments');
+        }
+
+        // Guarda los datos (favoritos, preferencias de ruta, nombre de usuario) en Firestore
+        async function saveData() {
+            if (!isAuthReady || !db || !userId) {
+                console.error("Firestore no está listo o el usuario no está autenticado. No se pudo guardar la data.");
+                return;
+            }
+            const docRef = getPrivateDocRef();
+            if (!docRef) return;
+
+            try {
+                const dataToSave = {
+                    favorites: favorites,
+                    lastRoute: currentRoutePreferences,
+                    userName: currentUserName // NUEVO: nombre de usuario persistente
+                };
+                // Usamos setDoc con { merge: true } para no sobrescribir otros campos
+                await setDoc(docRef, dataToSave, { merge: true });
+                console.log("Datos guardados exitosamente.");
+            } catch (e) {
+                console.error("Error al guardar el documento: ", e);
+            }
+        }
+
+        // Carga los datos (favoritos, nombre de usuario) desde Firestore
+        async function loadData() {
+            if (!isAuthReady || !db || !userId) {
+                console.error("Firestore no está listo o el usuario no está autenticado. Cargando datos por defecto.");
+                return;
+            }
+            const docRef = getPrivateDocRef();
+            if (!docRef) return;
+
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    favorites = data.favorites || []; // Carga la lista de favoritos
+                    currentUserName = data.userName || null; // Carga el nombre de usuario
+                    // Opcional: currentRoutePreferences = data.lastRoute || {};
+                    console.log("Datos cargados exitosamente.");
+                } else {
+                    console.log("No se encontraron datos de usuario existentes.");
+                }
+            } catch (e) {
+                console.error("Error al cargar el documento: ", e);
+            } finally {
+                // Siempre actualiza la UI después de cargar (o fallar la carga)
+                loadingSpinner.classList.add('hidden');
+                renderLoginArea(); // Muestra el estado de la sesión
+                resetSidebar(); 
+            }
+        }
+        
+        // Inicialización de Firebase y Autenticación (MANDATORIO)
+        async function setupFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config no está disponible. La persistencia está deshabilitada.");
+                userId = crypto.randomUUID(); // ID temporal
+                isAuthReady = true;
+                loadingSpinner.classList.add('hidden');
+                renderLoginArea();
+                resetSidebar();
+                return;
+            }
+            
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
+
+                // Autenticación inicial
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Esperar a que el estado de autenticación cambie
+                const promise = new Promise((resolve) => {
+                    const unsubscribe = onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            userIdDisplay.textContent = `ID de Usuario: ${userId}`;
+                        } else {
+                            userId = crypto.randomUUID();
+                            userIdDisplay.textContent = `ID Temporal: ${userId}`;
+                        }
+                        isAuthReady = true;
+                        unsubscribe(); 
+                        resolve();
+                    });
+                });
+                await promise;
+                await loadData();
+
+            } catch (e) {
+                console.error("Fallo la configuración de Firebase:", e);
+                userId = crypto.randomUUID(); 
+                isAuthReady = true;
+                loadingSpinner.classList.add('hidden');
+                renderLoginArea();
+                resetSidebar();
+            }
+        }
+
+        // **********************************************
+        // Lógica de Autenticación Simulada
+        // **********************************************
+        
+        // Simula el inicio de sesión con Google (en realidad, guarda un nombre en la DB)
+        async function simulateGoogleSignIn() {
+            // 1. Generar un nombre de perfil (simulación)
+            const names = ["Analista Viajero", "Explorador Digital", "Experto Local", "Guía Virtual", "Cronista Geográfico"];
+            const randomIndex = Math.floor(Math.random() * names.length);
+            const newName = names[randomIndex];
+
+            // 2. Actualizar el estado y persistir el nombre
+            currentUserName = newName;
+            await saveData(); 
+
+            // 3. Actualizar UI
+            renderLoginArea();
+            if (lastSelectedDestination) {
+                selectLocation(lastSelectedDestination); // Refresca la vista para mostrar el formulario de comentarios
+            } else {
+                resetSidebar();
+            }
+            showModal('Sesión Iniciada', `¡Bienvenido, **${newName}**! Ahora puedes dejar tus comentarios en los destinos.`);
+        }
+        
+        // Función para renderizar el estado de la sesión en la esquina superior derecha
+        function renderLoginArea() {
+            const loginArea = document.getElementById('login-area');
+            if (!loginArea) return;
+
+            if (currentUserName) {
+                loginArea.innerHTML = `
+                    <div class="flex items-center space-x-2 px-3 py-2 bg-white rounded-full shadow-lg border border-blue-200">
+                        <div class="h-6 w-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+                            ${currentUserName.charAt(0)}
+                        </div>
+                        <span class="font-semibold text-sm text-gray-800 hidden sm:inline">${currentUserName}</span>
+                        <button onclick="signOut()" title="Cerrar Sesión" class="text-gray-500 hover:text-red-500 transition p-1">
+                            <i data-lucide="log-out" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `;
+            } else {
+                loginArea.innerHTML = `
+                    <button onclick="simulateGoogleSignIn()" class="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition shadow-lg">
+                        <i data-lucide="key-round" class="w-5 h-5"></i>
+                        <span>Iniciar Sesión</span>
+                    </button>
+                `;
+            }
+            lucide.createIcons();
+        }
+
+        // Función para cerrar la sesión (simulada)
+        async function signOut() {
+            currentUserName = null;
+            await saveData(); // Limpiar el nombre de persistencia
+            renderLoginArea();
+            if (lastSelectedDestination) {
+                selectLocation(lastSelectedDestination); // Refresca la vista para ocultar el formulario
+            } else {
+                resetSidebar();
+            }
+            showModal('Sesión Cerrada', 'Has cerrado tu sesión.');
+        }
+
+        // **********************************************
+        // Lógica de Comentarios
+        // **********************************************
+
+        /**
+         * Renders the comments section and sets up a real-time listener.
+         * @param {string} location - The location name.
+         */
+        function renderCommentsSection(location) {
+            const commentsContainer = document.getElementById('comments-container');
+            if (!commentsContainer) return;
+            
+            // 1. Renderizar el formulario de entrada (visible solo si ha iniciado sesión)
+            const isAuthenticated = !!currentUserName;
+
+            let commentForm = `
+                <div class="mt-8 pt-4 border-t border-gray-200">
+                    <h4 class="font-bold text-lg mb-2 text-gray-700">Comentar Experiencia</h4>
+                    ${isAuthenticated ? `
+                        <textarea id="comment-input" rows="3" class="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 resize-none" 
+                            placeholder="Comparte cómo fue tu experiencia en ${location}..." required></textarea>
+                        <button onclick="submitComment('${location}')" class="mt-2 w-full py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition">
+                            <i data-lucide="message-square" class="w-4 h-4 inline mr-1"></i> Publicar Comentario
+                        </button>
+                    ` : `
+                        <div class="p-3 bg-red-50 rounded-lg border-l-4 border-red-400 text-center">
+                            <p class="text-sm text-red-700">
+                                <i data-lucide="lock" class="w-4 h-4 inline mr-1"></i> 
+                                Inicia sesión para dejar tu comentario.
+                            </p>
+                        </div>
+                    `}
+                </div>
+            `;
+            
+            // 2. Añadir el contenedor de la lista de comentarios
+            commentsContainer.innerHTML = commentForm + `
+                <h4 class="font-bold text-lg mt-6 mb-2 text-gray-700">Comentarios de la Comunidad</h4>
+                <div id="comments-list" class="space-y-4">
+                    <p class="text-center text-sm text-gray-400">Cargando comentarios...</p>
+                </div>
+            `;
+            lucide.createIcons();
+
+            // 3. Configurar el oyente en tiempo real (onSnapshot)
+            if (!db) return;
+
+            const commentsRef = getCommentsCollectionRef();
+            // Filtrar comentarios por ubicación
+            const q = query(commentsRef, where("location", "==", location)); 
+
+            onSnapshot(q, (snapshot) => {
+                const commentsList = document.getElementById('comments-list');
+                if (!commentsList) return;
+
+                let fetchedComments = [];
+                snapshot.forEach((doc) => {
+                    fetchedComments.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Ordenar en memoria por timestamp (más nuevos primero)
+                fetchedComments.sort((a, b) => {
+                    const timeA = a.timestamp ? a.timestamp.toDate().getTime() : 0;
+                    const timeB = b.timestamp ? b.timestamp.toDate().getTime() : 0;
+                    return timeB - timeA;
+                });
+
+                // Renderizar los comentarios ordenados
+                if (fetchedComments.length === 0) {
+                    commentsList.innerHTML = `<p class="text-center text-sm text-gray-500 p-4 bg-white rounded-lg shadow-sm">Aún no hay comentarios. ¡Sé el primero!</p>`;
+                } else {
+                    commentsList.innerHTML = fetchedComments.map(comment => {
+                        const date = comment.timestamp ? comment.timestamp.toDate().toLocaleDateString() : 'Fecha Desconocida';
+                        const time = comment.timestamp ? comment.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                        const displayUserName = comment.userName || 'Usuario Anónimo';
+                        
+                        return `
+                            <div class="p-3 bg-white rounded-lg shadow-sm border-l-4 border-blue-400">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="font-bold text-sm text-blue-600">${displayUserName}</span>
+                                    <span class="text-xs text-gray-400">${date} ${time}</span>
+                                </div>
+                                <p class="text-gray-700 text-sm">${comment.comment}</p>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }, (error) => {
+                console.error("Error fetching comments:", error);
+                const commentsList = document.getElementById('comments-list');
+                if (commentsList) commentsList.innerHTML = `<p class="text-center text-sm text-red-500">Error al cargar comentarios.</p>`;
+            });
+        }
+
+        /**
+         * Submits a new comment to Firestore.
+         * @param {string} location - The location name.
+         */
+        async function submitComment(location) {
+            if (!currentUserName) {
+                showModal('Error', 'Debes iniciar sesión para comentar.');
+                return;
+            }
+            
+            const input = document.getElementById('comment-input');
+            const commentText = input.value.trim();
+
+            if (commentText.length < 5) {
+                showModal('Error', 'El comentario debe tener al menos 5 caracteres.');
+                return;
+            }
+
+            try {
+                // Agregar el comentario a la colección pública
+                await addDoc(getCommentsCollectionRef(), {
+                    location: location,
+                    userId: userId, // Firebase UID
+                    userName: currentUserName, // Nombre de usuario simulado (Google)
+                    comment: commentText,
+                    timestamp: serverTimestamp() // Sello de tiempo del servidor
+                });
+                
+                input.value = ''; // Limpiar input
+                showModal('Comentario Publicado', `Tu experiencia en **${location}** ha sido compartida.`);
+
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showModal('Error', 'No se pudo publicar el comentario. Inténtalo de nuevo.');
+            }
+        }
+
+
+        // **********************************************
+        // Lógica de Zoom y Pan (Arrastre)
+        // **********************************************
+
+        // Aplica el nivel de zoom y la traslación actual
+        function updateMapTransform() {
+            mapVisualization.style.transform = `scale(${currentZoomLevel}) translate(${currentTranslateX}px, ${currentTranslateY}px)`;
+        }
+
+        // Inicia el arrastre
+        mapArea.addEventListener('mousedown', (e) => {
+            // No iniciar arrastre si el clic fue en un marcador o en la barra de login
+            if (e.target.closest('.map-marker') || e.target.closest('button') || e.target.closest('#login-area')) return; 
+            
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            mapArea.style.cursor = 'grabbing';
+            e.preventDefault(); 
+        });
+
+        // Actualiza la posición durante el arrastre
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+
+            currentTranslateX += dx;
+            currentTranslateY += dy;
+
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            updateMapTransform();
+        });
+
+        // Detiene el arrastre
+        document.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            mapArea.style.cursor = 'grab';
+        });
+
+        // También detiene el arrastre si el ratón sale de la ventana
+        document.addEventListener('mouseleave', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            mapArea.style.cursor = 'grab';
+        });
+        
+        // Maneja el Zoom In
+        function zoomIn() {
+            currentZoomLevel = Math.min(2.0, currentZoomLevel + 0.1); // Límite máximo de zoom
+            updateMapTransform();
+            showModal("Zoom", "Simulando acercamiento (Zoom In)");
+        }
+        
+        // Maneja el Zoom Out
+        function zoomOut() {
+            currentZoomLevel = Math.max(1.0, currentZoomLevel - 0.1);
+            // Si volvemos al zoom 1.0, restablecemos la traslación para centrar el mapa
+            if (currentZoomLevel === 1.0) {
+                currentTranslateX = 0;
+                currentTranslateY = 0;
+            }
+            updateMapTransform();
+            showModal("Zoom", "Simulando alejamiento (Zoom Out)");
+        }
+        
+        // Enfoca el mapa en la ubicación del usuario (simulado)
+        function focusOnMyLocation() {
+            clearRoute();
+            currentZoomLevel = 1.5;
+            currentTranslateX = 0;
+            currentTranslateY = 0;
+            updateMapTransform();
+            
+            showModal("Ubicación Actual", "Simulando centrar y hacer zoom en tu ubicación actual.");
+        }
+        
+        // **********************************************
+        // Lógica de Preguntas de Ruta (Omitido para brevedad, permanece del anterior)
+        // **********************************************
+
+        function showRouteQuestionnaire(destination) {
+            // Reiniciar preferencias
+            currentRoutePreferences = {
+                destination: destination,
+                mode: '', // Nuevo: Coche, Caminando, Bicicleta
+                speed: '',
+                tolls: ''
+            };
+            handleQuestionAnswer(destination, 0, null);
+        }
+
+        function handleQuestionAnswer(destination, step, answer) {
+            
+            if (answer) {
+                if (step === 1) {
+                    currentRoutePreferences.mode = answer;
+                } else if (step === 2) {
+                    currentRoutePreferences.speed = answer;
+                } else if (step === 3) {
+                    currentRoutePreferences.tolls = answer;
+                    displayFinalRoute(destination, currentRoutePreferences);
+                    saveData(); 
+                    return;
+                }
+            }
+
+            const nextStep = step + 1;
+            let title = `Planificando Ruta a ${destination}`;
+            let htmlContent = '';
+
+            if (nextStep === 1) {
+                htmlContent = `
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        <h2 class="text-xl font-bold text-blue-700">${title}</h2>
+                    </div>
+                    <div class="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400 mb-4">
+                        <p class="font-bold text-blue-700">Paso 1 de 3: Modo de Transporte</p>
+                        <p class="text-md text-gray-700">¿Cómo deseas viajar?</p>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <button class="w-full py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 1, 'Coche')">
+                            <i data-lucide="car" class="w-5 h-5 inline mr-2"></i> Coche
+                        </button>
+                        <button class="w-full py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 1, 'Caminando')">
+                            <i data-lucide="footprints" class="w-5 h-5 inline mr-2"></i> Caminando
+                        </button>
+                        <button class="w-full py-3 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 1, 'Bicicleta')">
+                            <i data-lucide="bike" class="w-5 h-5 inline mr-2"></i> Bicicleta
+                        </button>
+                    </div>
+                `;
+            } else if (nextStep === 2) {
+                htmlContent = `
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        <h2 class="text-xl font-bold text-blue-700">${title}</h2>
+                    </div>
+                    <div class="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400 mb-4">
+                        <p class="font-bold text-blue-700">Paso 2 de 3: Tipo de Ruta</p>
+                        <p class="text-md text-gray-700">¿Qué tipo de ruta prefieres?</p>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <button class="w-full py-3 bg-indigo-500 text-white font-semibold rounded-lg hover:bg-indigo-600 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 2, 'Rápida')">
+                            <i data-lucide="zap" class="w-5 h-5 inline mr-2"></i> Más Rápida (Menos tiempo)
+                        </button>
+                        <button class="w-full py-3 bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 2, 'Escénica')">
+                            <i data-lucide="map-pin" class="w-5 h-5 inline mr-2"></i> Más Escénica (Mejores vistas)
+                        </button>
+                    </div>
+                `;
+            } else if (nextStep === 3) {
+                title = `Opciones de Peaje a ${destination}`;
+                
+                if (currentRoutePreferences.mode !== 'Coche') {
+                    currentRoutePreferences.tolls = 'N/A (No aplica)';
+                    displayFinalRoute(destination, currentRoutePreferences);
+                    saveData(); 
+                    return;
+                }
+                
+                htmlContent = `
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        <h2 class="text-xl font-bold text-blue-700">${title}</h2>
+                    </div>
+                    <div class="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400 mb-4">
+                        <p class="font-bold text-blue-700">Paso 3 de 3: Peajes</p>
+                        <p class="text-md text-gray-700">¿Deseas evitar los peajes?</p>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <button class="w-full py-3 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 3, 'Sí, evitar')">
+                            <i data-lucide="ban" class="w-5 h-5 inline mr-2"></i> Sí, evitar peajes
+                        </button>
+                        <button class="w-full py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition shadow-md" onclick="handleQuestionAnswer('${destination}', 3, 'No, usar')">
+                            <i data-lucide="credit-card" class="w-5 h-5 inline mr-2"></i> No, usar ruta con peajes
+                        </button>
+                    </div>
+                `;
+            }
+
+            if (htmlContent) {
+                sidebarContent.innerHTML = htmlContent;
+                lucide.createIcons();
+            }
+        }
+        
+        function displayFinalRoute(destination, preferences) {
+            clearRoute(); 
+            drawRoute(destination);
+            
+            let baseDistance = Math.floor(Math.random() * 500) + 100;
+            let baseTime = Math.floor(Math.random() * 8) + 3; 
+
+            if (['Ranelagh', 'Villa España', 'Florencio Varela'].includes(destination)) {
+                 baseDistance = Math.floor(Math.random() * 20) + 5; 
+                 baseTime = Math.floor(Math.random() * 1) + 0.5; 
+            }
+
+            let timeModifier = 1;
+            
+            if (preferences.mode === 'Caminando') {
+                baseDistance = ['Ranelagh', 'Villa España', 'Florencio Varela'].includes(destination) 
+                               ? Math.floor(baseDistance) 
+                               : Math.floor(baseDistance / 5);
+                               
+                baseTime = Math.floor(baseDistance / 5); 
+                timeModifier = ['Ranelagh', 'Villa España', 'Florencio Varela'].includes(destination) ? 1 : 50; 
+                
+            } else if (preferences.mode === 'Bicicleta') {
+                baseDistance = ['Ranelagh', 'Villa España', 'Florencio Varela'].includes(destination) 
+                               ? Math.floor(baseDistance) 
+                               : Math.floor(baseDistance / 3);
+                baseTime = Math.floor(baseDistance / 15); 
+                timeModifier = ['Ranelagh', 'Villa España', 'Florencio Varela'].includes(destination) ? 1 : 15;
+            } else { 
+                if (preferences.speed === 'Rápida') {
+                    baseDistance = Math.floor(baseDistance * 0.9); 
+                    baseTime = Math.max(1, Math.floor(baseTime * 0.8));
+                } else { 
+                    baseDistance = Math.floor(baseTime * 1.2); 
+                    baseTime = Math.floor(baseTime * 1.2); 
+                }
+            }
+
+            let displayTime;
+            if (preferences.mode === 'Caminando' || preferences.mode === 'Bicicleta') {
+                const totalHours = Math.max(1, baseTime * timeModifier);
+                const days = Math.floor(totalHours / 24);
+                const hours = totalHours % 24;
+
+                if (days > 0) {
+                    displayTime = `${days} días y ${hours} horas`;
+                } else {
+                    displayTime = `${hours} horas`;
+                }
+
+            } else {
+                if (baseTime < 2) { 
+                    const totalMinutes = Math.floor(baseTime * 60);
+                    displayTime = `${totalMinutes} minutos`;
+                } else {
+                    displayTime = `${baseTime} horas`;
+                }
+            }
+            
+            const tollsMessage = preferences.tolls === 'Sí, evitar' ? ' (Sin Peajes)' : 
+                                 preferences.tolls === 'No, usar' ? ' (Con Peajes)' : 
+                                 preferences.mode === 'Coche' ? ' (Peajes no definidos)' : '';
+            
+            const voiceMessage = `Iniciando ruta en ${preferences.mode} a ${destination}${tollsMessage}. Duración estimada: ${displayTime}.`;
+
+            sidebarContent.innerHTML = `
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 class="text-xl font-bold text-blue-700">Ruta Calculada a ${destination}</h2>
+                    <button onclick="resetSidebar()" class="text-sm text-gray-500 hover:text-red-500 transition">
+                        <i data-lucide="x" class="w-4 h-4 inline"></i> Cerrar
+                    </button>
+                </div>
+                <div class="p-4 bg-green-50 rounded-lg border-l-4 border-green-500 mb-4">
+                    <p class="font-bold text-green-700">Preferencias Aplicadas:</p>
+                    <p class="text-sm">Modo: **${preferences.mode}**</p>
+                    <p class="text-sm">Velocidad: ${preferences.speed}</p>
+                    <p class="text-sm">Peajes: ${preferences.tolls}</p>
+                </div>
+
+                <div class="space-y-3 text-gray-800">
+                    <div class="flex items-center justify-between p-3 bg-gray-100 rounded-lg shadow-sm">
+                        <span class="font-semibold">Distancia:</span>
+                        <span class="text-lg text-blue-600 font-bold">${baseDistance} km</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-gray-100 rounded-lg shadow-sm">
+                        <span class="font-semibold">Tiempo Estimado:</span>
+                        <span class="text-lg text-blue-600 font-bold">${displayTime}</span>
+                    </div>
+                </div>
+                
+                <button class="w-full mt-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition shadow-lg" onclick="showModal('Navegación Terminada', 'La navegación se ha detenido. ¡Esperamos que hayas llegado bien!')">
+                    <i data-lucide="flag-checkered" class="w-5 h-5 inline mr-2"></i> Detener Navegación
+                </button>
+            `;
+            lucide.createIcons();
+
+            showModal('Ruta EN VIVO - Navegación GPS', `
+                <div class="flex flex-col items-center">
+                    <i data-lucide="volume-2" class="w-8 h-8 text-blue-600 mb-2"></i>
+                    <p class="font-bold text-lg text-gray-800">VOZ GPS SIMULADA:</p>
+                    <p class="text-xl italic text-green-700 mt-1 mb-4">"${voiceMessage}"</p>
+                </div>
+            `);
+        }
+        
+        // **********************************************
+        // Funciones de UI y Estado (Resto de funciones)
+        // **********************************************
+
+        function closeModal() {
+            appModal.style.opacity = '0';
+            setTimeout(() => {
+                appModal.classList.add('hidden');
+            }, 300);
+        }
+        
+        function showModal(title, content) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-app-name').innerHTML = content;
+
+            appModal.style.opacity = '0';
+            appModal.classList.remove('hidden');
+            setTimeout(() => {
+                appModal.style.opacity = '1';
+                lucide.createIcons();
+            }, 10);
+        }
+
+        function simulateMarkerClick(location) {
+            clearRoute();
+            showModal("Cargando Ciudad", `Cargando detalles e imagen de **${location}**...`);
+            
+            const coords = locations[location];
+            if (coords && coords.zoom) {
+                currentZoomLevel = coords.zoom;
+                currentTranslateX = coords.focusX || 0;
+                currentTranslateY = coords.focusY || 0; 
+                updateMapTransform();
+            } else {
+                currentZoomLevel = 1.0;
+                currentTranslateX = 0;
+                currentTranslateY = 0;
+                updateMapTransform();
+            }
+
+            selectLocation(location); // Actualiza la UI con el esqueleto
+            fetchCityImageAndDetails(location); // Inicia la generación y reemplazo de la imagen
+        }
+        
+        function simulateSearch() {
+             showModal("Búsqueda Simulada", "Aquí aparecerían los resultados al escribir. Selecciona un destino de la lista para ver sus detalles.");
+        }
+        
+        async function saveToFavorites(location) {
+            if (!favorites.includes(location)) {
+                favorites.push(location);
+                await saveData(); // Guarda en Firestore
+                showModal('Guardado', `¡**${location}** ha sido añadido a tus favoritos!`);
+                renderFavoritesList();
+                selectLocation(location); // Refresca la vista para actualizar el botón de favorito
+            } else {
+                showModal('Guardado', `**${location}** ya estaba en tus favoritos.`);
+            }
+        }
+
+        function renderFavoritesList() {
+            const favoritesContainer = document.getElementById('favorites-list');
+            if (!favoritesContainer) return;
+
+            if (favorites.length === 0) {
+                favoritesContainer.innerHTML = `<p class="text-sm text-gray-500 italic mt-2">Aún no tienes lugares guardados.</p>`;
+            } else {
+                favoritesContainer.innerHTML = '';
+                favorites.forEach(loc => {
+                    favoritesContainer.innerHTML += `
+                        <div class="p-2 border rounded-lg hover:bg-yellow-50 cursor-pointer transition flex justify-between items-center" onclick="simulateMarkerClick('${loc}')">
+                            <span class="font-semibold text-gray-800">${loc}</span>
+                            <i data-lucide="star" class="w-4 h-4 text-yellow-500 fill-yellow-500"></i>
+                        </div>
+                    `;
+                });
+                lucide.createIcons();
+            }
+        }
+
+
+        // Simula la selección de una ubicación en la barra lateral
+        function selectLocation(location) {
+            lastSelectedDestination = location;
+            
+            const isFavorite = favorites.includes(location);
+            const favoriteButtonText = isFavorite ? 'Ya Guardado' : 'Guardar en Favoritos';
+            const favoriteButtonClass = isFavorite ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300';
+            const favoriteButtonAction = isFavorite ? `showModal('Guardado', 'Ya lo tienes en tu lista de favoritos.')` : `saveToFavorites('${location}')`;
+
+            // Estructura de la barra lateral con placeholder de imagen
+            sidebarContent.innerHTML = `
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 class="text-2xl font-bold text-blue-700">${location}</h2>
+                    <button onclick="resetSidebar()" class="text-sm text-gray-500 hover:text-red-500 transition">
+                        <i data-lucide="x" class="w-5 h-5 inline"></i> Cerrar
+                    </button>
+                </div>
+                
+                <!-- Contenedor para la imagen generada (será reemplazado por JS) -->
+                <div id="city-image-container">
+                    <div class="text-center p-4">
+                        <div class="animate-pulse h-8 w-8 bg-gray-300 rounded-full mx-auto mb-2"></div>
+                        <p class="text-sm text-gray-400">Preparando vista de ${location}...</p>
+                    </div>
+                </div>
+
+                <p class="text-sm text-gray-700 mb-4">
+                    Explora la ciudad virtualmente. Pulsa "Cómo Llegar" para planificar tu viaje.
+                </p>
+                <button class="w-full py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition mb-3" onclick="showRouteQuestionnaire('${location}')">
+                    <i data-lucide="route" class="w-5 h-5 inline mr-2"></i> Cómo Llegar
+                </button>
+                <button class="w-full py-2 ${favoriteButtonClass} font-semibold rounded-lg transition" onclick="${favoriteButtonAction}">
+                    <i data-lucide="save" class="w-5 h-5 inline mr-2"></i> ${favoriteButtonText}
+                </button>
+                
+                <!-- NUEVO: Contenedor para Comentarios -->
+                <div id="comments-container">
+                    <!-- Contenido de comentarios y formulario cargado por JS (renderCommentsSection) -->
+                </div>
+            `;
+            lucide.createIcons();
+            
+            // Renderiza la sección de comentarios al cargar la vista
+            renderCommentsSection(location);
+        }
+        
+        function drawRoute(destination) {
+            const start = locations['Mi Ubicación'];
+            const end = locations[destination];
+            
+            if (!end) return; 
+            
+            const dx = end.left - start.left;
+            const dy = end.top - start.top;
+            
+            const length = Math.sqrt(dx * dx + dy * dy);
+            
+            const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+
+            routePathSim.style.cssText = `
+                top: ${start.top}%;
+                left: ${start.left}%;
+                width: ${length}%;
+                height: 10px;
+                transform-origin: 0 0;
+                transform: rotate(${angleDeg}deg);
+                opacity: 1;
+            `;
+        }
+        
+        function clearRoute() {
+             routePathSim.style.opacity = '0';
+        }
+
+
+        // Restaura el contenido inicial de la barra lateral Y el estado del mapa
+        function resetSidebar() {
+            lastSelectedDestination = null;
+            clearRoute();
+            
+            // Contenido inicial de la barra lateral (Lista de ciudades)
+            sidebarContent.innerHTML = `
+                <h2 class="text-lg font-semibold mb-3 text-gray-700">Explorar Destinos Principales:</h2>
+                
+                <div class="space-y-4">
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Buenos Aires')">
+                        <p class="font-bold text-gray-900">Buenos Aires</p>
+                        <p class="text-sm text-gray-500">Capital Federal y el Gran Buenos Aires.</p>
+                    </div>
+
+                    <h3 class="text-md font-semibold mt-6 mb-2 text-gray-600 border-t pt-3">Capitales de Provincia:</h3>
+                    
+                    <div class="p-3 border rounded-lg hover:bg-fuchsia-50 cursor-pointer transition" onclick="simulateMarkerClick('Resistencia')">
+                        <p class="font-bold text-gray-900">Resistencia (Chaco)</p>
+                        <p class="text-sm text-gray-500">La "Ciudad de las Esculturas".</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-lime-50 cursor-pointer transition" onclick="simulateMarkerClick('Rawson')">
+                        <p class="font-bold text-gray-900">Rawson (Chubut)</p>
+                        <p class="text-sm text-gray-500">Capital política de Chubut, sobre el Río Chubut.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-indigo-50 cursor-pointer transition" onclick="simulateMarkerClick('Corrientes')">
+                        <p class="font-bold text-gray-900">Corrientes</p>
+                        <p class="text-sm text-gray-500">Capital del Iberá y el Chamamé.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-amber-50 cursor-pointer transition" onclick="simulateMarkerClick('Paraná')">
+                        <p class="font-bold text-gray-900">Paraná (Entre Ríos)</p>
+                        <p class="text-sm text-gray-500">Capital de Entre Ríos, sobre el río Paraná.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-emerald-50 cursor-pointer transition" onclick="simulateMarkerClick('Formosa')">
+                        <p class="font-bold text-gray-900">Formosa</p>
+                        <p class="text-sm text-gray-500">Ciudad del noreste argentino.</p>
+                    </div>
+                    
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Rosario')">
+                        <p class="font-bold text-gray-900">Rosario (Santa Fe)</p>
+                        <p class="text-sm text-gray-500">La ciudad del Monumento a la Bandera.</p>
+                    </div>
+
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Neuquén')">
+                        <p class="font-bold text-gray-900">Neuquén</p>
+                        <p class="text-sm text-gray-500">Capital económica de la Patagonia.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Mendoza')">
+                        <p class="font-bold text-gray-900">Mendoza</p>
+                        <p class="text-sm text-gray-500">Tierra del sol y del buen vino.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Salta')">
+                        <p class="font-bold text-gray-900">Salta</p>
+                        <p class="text-sm text-gray-500">La Linda, al pie de los Andes.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('San Miguel de Tucumán')">
+                        <p class="font-bold text-gray-900">San Miguel de Tucumán</p>
+                        <p class="text-sm text-gray-500">Cuna de la Independencia Argentina.</p>
+                    </div>
+                    
+                    <h3 class="text-md font-semibold mt-6 mb-2 text-gray-600 border-t pt-3">Destinos Turísticos y Locales:</h3>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Bariloche')">
+                        <p class="font-bold text-gray-900">Bariloche</p>
+                        <p class="text-sm text-gray-500">Nieve, lagos y montañas en la Patagonia.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Mar del Plata')">
+                        <p class="font-bold text-gray-900">Mar del Plata</p>
+                        <p class="text-sm text-gray-500">La Costa Atlántica, conocida como "La Feliz".</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Ushuaia')">
+                        <p class="font-bold text-gray-900">Ushuaia</p>
+                        <p class="text-sm text-gray-500">El Fin del Mundo.</p>
+                    </div>
+                    
+                    <h3 class="text-md font-semibold mt-6 mb-2 text-gray-600 border-t pt-3">Localidades Interiores:</h3>
+                    
+                    <div class="p-3 border rounded-lg hover:bg-red-50 cursor-pointer transition" onclick="simulateMarkerClick('Ranelagh')">
+                        <p class="font-bold text-gray-900">Ranelagh (GBA)</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-red-50 cursor-pointer transition" onclick="simulateMarkerClick('Villa España')">
+                        <p class="font-bold text-gray-900">Villa España (GBA)</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-red-50 cursor-pointer transition" onclick="simulateMarkerClick('Florencio Varela')">
+                        <p class="font-bold text-gray-900">Florencio Varela (GBA)</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Córdoba')">
+                        <p class="font-bold text-gray-900">Córdoba Capital</p>
+                        <p class="text-sm text-gray-500">La Docta, centro geográfico del país.</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('Villa del Totoral')">
+                        <p class="font-bold text-gray-900">Villa del Totoral (Córdoba)</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('La Puerta')">
+                        <p class="font-bold text-gray-900">La Puerta (Córdoba)</p>
+                    </div>
+                    <div class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition" onclick="simulateMarkerClick('La Para')">
+                        <p class="font-bold text-gray-900">La Para (Córdoba)</p>
+                    </div>
+                </div>
+                
+                <div class="mt-8 pt-4 border-t border-gray-200">
+                    <p class="text-xs text-gray-400">Esta es una simulación de interfaz. Los datos y la navegación no son funcionales.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            renderFavoritesList(); // Asegura que los favoritos cargados se muestren
+
+            // Restablece el zoom y el pan a su estado inicial
+            currentZoomLevel = 1.0;
+            currentTranslateX = 0;
+            currentTranslateY = 0;
+            updateMapTransform();
+        }
+        
+        // Inicializar: Llamar a setupFirebase al cargar la ventana
+        window.onload = function() {
+            lucide.createIcons();
+            updateMapTransform();
+            setupFirebase(); // Inicia la autenticación y luego carga los datos
+        };
+        
+        // **********************************************
+        // EXPOSICIÓN GLOBAL
+        // **********************************************
+        window.zoomIn = zoomIn;
+        window.zoomOut = zoomOut;
+        window.focusOnMyLocation = focusOnMyLocation;
+        window.resetSidebar = resetSidebar;
+        window.simulateSearch = simulateSearch;
+        window.simulateMarkerClick = simulateMarkerClick;
+        window.closeModal = closeModal;
+        window.showModal = showModal; 
+        window.selectLocation = selectLocation;
+        window.handleQuestionAnswer = handleQuestionAnswer;
+        window.saveToFavorites = saveToFavorites;
+        window.showRouteQuestionnaire = showRouteQuestionnaire; 
+        window.simulateGoogleSignIn = simulateGoogleSignIn; // NUEVO
+        window.signOut = signOut; // NUEVO
+        window.submitComment = submitComment; // NUEVO
+        window.fetchCityImageAndDetails = fetchCityImageAndDetails; 
+
+    </script>
+
+</body>
+</html>
